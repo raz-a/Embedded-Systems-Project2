@@ -29,5 +29,8 @@
     <Text Include="compressed.txt">
       <Filter>Resource Files</Filter>
     </Text>
+    <Text Include="dout.txt">
+      <Filter>Resource Files</Filter>
+    </Text>
   </ItemGroup>
 </Project>

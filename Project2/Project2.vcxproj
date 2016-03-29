@@ -123,6 +123,7 @@
   <ItemGroup>
     <Text Include="compressed.txt" />
     <Text Include="cout.txt" />
+    <Text Include="dout.txt" />
     <Text Include="original.txt" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

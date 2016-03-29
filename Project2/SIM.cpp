@@ -41,6 +41,9 @@ bool firstIsLarger(pair<string, pair<unsigned int, timestamp> > val1, pair<strin
 	return val1.second.second < val2.second.second;
 }
 
+template <size_t T>
+int readBits(ifstream &inputFile, bitset<T> &outBits);
+
 int main(int argc, char * argv[])
 {
 	/* Check args for compression/decompression argument */
@@ -365,7 +368,7 @@ void decompressData()
 	} 
 	while (s != "xxxx");
 
-	vector<bitset<32>> compressionDictionary;
+	vector<bitset<32> > compressionDictionary;
 
 	while (!input.eof())
 	{
@@ -386,50 +389,103 @@ void decompressData()
 	bitset<4> bitMask;
 	bitset<5> firstLocation, secondLocation;
 
-	while (!input.eof())
+	bool reachedEnd = false;
+	while (true)
 	{
 		/* Decompress Line by line */
 		/* Read in 3 characters */
-		input >> compressionType;
+		readBits<3>(input, compressionType);
 
 		switch (compressionType.to_ulong())
 		{
 			case 0: /* Run Length Encoding, repeat previous value */
-				input >> count;
-				for (int i = 0; i < count.to_ulong() + 1; i++)
+				readBits<2>(input, count);
+				for (int i = 0; i < (count.to_ulong()); i++)
 				{
 					output << previousOutput << endl;
 				}
 				
 				break;
 			case 1: /* Bit mask based compression, read in dictionary value and flip necessary bits */
-				input >> firstLocation >> bitMask >> dictionaryIndex;
-				// TODO: Complete Bitmask
+				readBits<5>(input, firstLocation);
+				readBits<4>(input, bitMask);
+				readBits<3>(input, dictionaryIndex);
+				previousOutput = compressionDictionary[dictionaryIndex.to_ulong()];
+
+				for (int i = 3, loc = 31 - firstLocation.to_ulong(); i >= 0; i--, loc--)
+				{
+					previousOutput[loc] = previousOutput[loc] ^ bitMask[i];
+				}
+				
 				break;
 			case 2: /* 1 bit Mismatch */
-				input >> firstLocation >> dictionaryIndex;
-				// TODO: Complete One bit
+				readBits<5>(input, firstLocation);
+				readBits<3>(input, dictionaryIndex);
+				previousOutput = compressionDictionary[dictionaryIndex.to_ulong()];
+				previousOutput.flip(31 - firstLocation.to_ulong());
 				break;
 			case 3: /* 2-bit consecutive mismatch */
-				input >> firstLocation >> dictionaryIndex;
-				// TODO: Complete 2 bit
+				readBits<5>(input, firstLocation);
+				readBits<3>(input, dictionaryIndex);
+				previousOutput = compressionDictionary[dictionaryIndex.to_ulong()];
+				previousOutput.flip(31 - firstLocation.to_ulong());
+				previousOutput.flip(30 - firstLocation.to_ulong());
 				break;
 			case 4: /* 2-bit mismatch anywhere */
-				input >> firstLocation >> secondLocation >> dictionaryIndex;
-				// TODO: Complete 2 bit anywhere
+				readBits<5>(input, firstLocation);
+				readBits<5>(input, secondLocation);
+				readBits<3>(input, dictionaryIndex);
+				previousOutput = compressionDictionary[dictionaryIndex.to_ulong()];
+				previousOutput.flip(31 - firstLocation.to_ulong());
+				previousOutput.flip(31 - secondLocation.to_ulong());
 				break;
 			case 5: /* Direct Matching */
-				input >> dictionaryIndex;
+				readBits<3>(input, dictionaryIndex);
 				previousOutput = compressionDictionary[dictionaryIndex.to_ulong()];
-				output << previousOutput;
 				break;
 			case 7: /* Original Binary */
-				input >> previousOutput;
-				output << previousOutput;
+				if (readBits<32>(input, previousOutput))
+				{
+					/* Reached end of code */
+					reachedEnd = true;
+					break;
+				}
+		}
+
+		if (reachedEnd)
+		{
+			break;
+		}
+
+		output << previousOutput << endl;
+		
+	}
+
+	input.close();
+	output.close();
+}
+
+template<size_t T>
+int readBits(ifstream &inputFile, bitset<T> &outBits)
+{
+	string bits(T, '\0');
+
+	for (int i = 0; i < T; i++)
+	{
+		bits[i] = inputFile.get();
+		if (bits[i] == 'x')
+		{
+			/* Reached end of code */
+			return -1;
+		}
+		if (bits[i] == '\n' || bits[i] == '\r')
+		{
+			/* Skip newlines */
+			i--;
 		}
 	}
 
-	//TODO: Account for reverse bits?
+	outBits = bitset<T>(bits);
 
-	output.close();
+	return 0;
 }
