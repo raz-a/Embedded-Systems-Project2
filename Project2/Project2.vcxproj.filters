@@ -26,5 +26,8 @@
     <Text Include="cout.txt">
       <Filter>Resource Files</Filter>
     </Text>
+    <Text Include="compressed.txt">
+      <Filter>Resource Files</Filter>
+    </Text>
   </ItemGroup>
 </Project>

@@ -22,6 +22,8 @@ using namespace std::tr1;
 
 using namespace std;
 
+typedef unsigned int timestamp;
+
 #define IN_COMPRESS "original.txt"
 #define OUT_COMPRESS "cout.txt"
 #define IN_DECOMPRESS "compressed.txt"
@@ -30,9 +32,13 @@ using namespace std;
 void compressData();
 string compressLine(bitset<32> rawLine, vector<bitset<32> > dictionary, unsigned int count);
 void decompressData();
-bool firstIsLarger(pair<string, unsigned int> val1, pair<string, unsigned int> val2)
+bool firstIsLarger(pair<string, pair<unsigned int, timestamp> > val1, pair<string, pair<unsigned int, timestamp> > val2)
 {
-	return val1.second > val2.second;
+	if (val1.second.first != val2.second.first)
+	{
+		return val1.second.first > val2.second.first;
+	}
+	return val1.second.second < val2.second.second;
 }
 
 int main(int argc, char * argv[])
@@ -75,10 +81,13 @@ void compressData()
 	{
 		/* Could not open file */
 		cerr << "Could not open file \"" << IN_COMPRESS << "\"\nMake sure the file is in the same directory as the executable";
+		return;
 	}
 
 	/* Count Freqnecy of Lines of Code */
-	unordered_map<string, unsigned int> * frequencyCount = new unordered_map<string, unsigned int>();
+	unordered_map<string, pair<unsigned int, timestamp> > * frequencyCount = new unordered_map<string, pair<unsigned int, timestamp> >();
+
+	timestamp t = 0;
 
 	while (!input.eof())
 	{
@@ -88,18 +97,18 @@ void compressData()
 		if (frequencyCount->find(s) == frequencyCount->end())
 		{
 			/* This line has not been seen before */
-			frequencyCount->insert(pair<string, unsigned int>(s, 1));
+			frequencyCount->insert(pair<string, pair<unsigned int, timestamp> >(s, pair<unsigned int, timestamp>(1, t)));
 		}
 		else
 		{
 			/* Increment count of this line */
-			(*frequencyCount)[s]++;
+			(*frequencyCount)[s].first++;
 		}
+
+		t++;
 	}
 
-	// TODO: Fix ordering problem (timestamp of some sort?)
-
-	vector <pair<string, unsigned int> > * maxVals = new vector<pair<string, unsigned int> >(frequencyCount->begin(), frequencyCount->end());
+	vector <pair<string, pair<unsigned int, timestamp> > > * maxVals = new vector<pair<string, pair<unsigned int, timestamp> > >(frequencyCount->begin(), frequencyCount->end());
 	stable_sort(maxVals->begin(), maxVals->end(), firstIsLarger);
 	
 
@@ -187,6 +196,12 @@ void compressData()
 		cursorPosition++;
 	}
 
+	/* Fill remaining line with 1's*/
+	for (; cursorPosition != 32; cursorPosition++)
+	{
+		output << 1;
+	}
+
 	/* Print Out Seperation for Dictionary */
 	output << endl << "xxxx";
 
@@ -240,13 +255,13 @@ string compressLine(bitset<32> rawLine, vector<bitset<32> > dictionary, unsigned
 			if (mismatches[i].size() == 1)
 			{
 				/* Print out 1 bit mismatch */
-				result << "010" << bitset<5>(31 - mismatches[i][0]);
+				result << "010" << bitset<5>(31 - mismatches[i][0]) << bitset<3>(i);
 				compressionFound = true;
 				break;
 			}
 		}
 
-		/* TODO: Preference 3: Consecutive 2-Bit Mismatch */
+		/* Preference 3: Consecutive 2-Bit Mismatch */
 		if (!compressionFound)
 		{
 			for (int i = 0; i < 8; i++)
@@ -255,21 +270,59 @@ string compressLine(bitset<32> rawLine, vector<bitset<32> > dictionary, unsigned
 					&& mismatches[i][0] + 1 == mismatches[i][1])
 				{
 					/* Print Out 2 bit mismatch */
-					result << "011" << bitset<5>(31 - mismatches[i][0]);
+					result << "011" << bitset<5>(31 - mismatches[i][1]) << bitset<3>(i);
+					compressionFound = true;
+					break;
 				}
 			}
 		}
 
-		/* TODO: Preference 4: Bitmask Based Compression */
+		/* Preference 4: Bitmask Based Compression */
 		if (!compressionFound)
 		{
+			for (int i = 0; i < 8; i++)
+			{
+				size_t size = mismatches[i].size();
 
+				if (size <= 4 && mismatches[i][size-1] - mismatches[i][0] < 4)
+				{
+					/* Print Out bitmask mismatch */
+					result << "001" << bitset<5>(31-mismatches[i][size - 1]);
+					
+					/* Calculate bitmask */
+					for (int j = mismatches[i][size - 1], k = 1; j > mismatches[i][size - 1] - 4; j--)
+					{
+						if (k > size || j != mismatches[i][size - k])
+						{
+							result << 0;
+						}
+						else
+						{
+							result << 1;
+							k++;
+						}
+					}
+
+					result << bitset<3>(i);
+					compressionFound = true;
+					break;
+				}
+			}
 		}
 
-		/* TODO: Preference 5: 2-bit Mismatch anywhere */
+		/* Preference 5: 2-bit Mismatch anywhere */
 		if (!compressionFound)
 		{
-
+			for (int i = 0; i < 8; i++)
+			{
+				if (mismatches[i].size() == 2)
+				{
+					/* Print out 2 bit mismatch */
+					result << "100" << bitset<5>(31 - mismatches[i][1]) << bitset<5>(31 - mismatches[i][0]) << bitset<3>(i);
+					compressionFound = true;
+					break;
+				}
+			}
 		}
 
 		/* Preference 6: Original Binary */
@@ -294,4 +347,89 @@ string compressLine(bitset<32> rawLine, vector<bitset<32> > dictionary, unsigned
 void decompressData()
 {
 	// TODO: All decompression
+	/* Open File Stream for Input File */
+	ifstream input(IN_DECOMPRESS);
+
+	if (!input.is_open())
+	{
+		/* Could not open file */
+		cerr << "Could not open file \"" << IN_DECOMPRESS << "\"\nMake sure the file is in the same directory as the executable";
+		return;
+	}
+
+	/* Get dictionary */
+	string s;
+	do
+	{
+		getline(input, s);
+	} 
+	while (s != "xxxx");
+
+	vector<bitset<32>> compressionDictionary;
+
+	while (!input.eof())
+	{
+		getline(input, s);
+		compressionDictionary.push_back(bitset<32>(s));
+	}
+
+	/* Return to top of file */
+	input.clear();
+	input.seekg(0, ios::beg);
+
+	ofstream output(OUT_DECOMPRESS);
+
+	bitset<32> previousOutput = 0;
+
+	bitset<2> count;
+	bitset<3> compressionType, dictionaryIndex;
+	bitset<4> bitMask;
+	bitset<5> firstLocation, secondLocation;
+
+	while (!input.eof())
+	{
+		/* Decompress Line by line */
+		/* Read in 3 characters */
+		input >> compressionType;
+
+		switch (compressionType.to_ulong())
+		{
+			case 0: /* Run Length Encoding, repeat previous value */
+				input >> count;
+				for (int i = 0; i < count.to_ulong() + 1; i++)
+				{
+					output << previousOutput << endl;
+				}
+				
+				break;
+			case 1: /* Bit mask based compression, read in dictionary value and flip necessary bits */
+				input >> firstLocation >> bitMask >> dictionaryIndex;
+				// TODO: Complete Bitmask
+				break;
+			case 2: /* 1 bit Mismatch */
+				input >> firstLocation >> dictionaryIndex;
+				// TODO: Complete One bit
+				break;
+			case 3: /* 2-bit consecutive mismatch */
+				input >> firstLocation >> dictionaryIndex;
+				// TODO: Complete 2 bit
+				break;
+			case 4: /* 2-bit mismatch anywhere */
+				input >> firstLocation >> secondLocation >> dictionaryIndex;
+				// TODO: Complete 2 bit anywhere
+				break;
+			case 5: /* Direct Matching */
+				input >> dictionaryIndex;
+				previousOutput = compressionDictionary[dictionaryIndex.to_ulong()];
+				output << previousOutput;
+				break;
+			case 7: /* Original Binary */
+				input >> previousOutput;
+				output << previousOutput;
+		}
+	}
+
+	//TODO: Account for reverse bits?
+
+	output.close();
 }

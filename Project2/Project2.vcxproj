@@ -121,6 +121,7 @@
     <ClCompile Include="SIM.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <Text Include="compressed.txt" />
     <Text Include="cout.txt" />
     <Text Include="original.txt" />
   </ItemGroup>
